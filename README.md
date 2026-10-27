@@ -3,6 +3,7 @@
 新增的统一 API 已实现实体发现、可观测性查询和 ChaosBlade 故障操作，并支持独立 provider 插件与多 target 配置。
 
 - [API 架构、运行与使用](docs/API.md)
+- [系统近期图景样例：文本、拓扑与指标图](examples/README.md)
 - [供其他 agent 实现后端的接入规范](docs/SPEC.md)
 - [OpenAPI 契约](docs/openapi.json) / [配置 JSON Schema](docs/config.schema.json)
 - [本机集成验证记录与兼容性限制](docs/VALIDATION.md)

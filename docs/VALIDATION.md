@@ -64,3 +64,9 @@ PASS action preview: network.delay
 - 新增 `chaosblade` namespace、operator、每节点 tool，以及相关 CRD/RBAC；没有修改 default namespace 原有 release 的配置。
 - 测试实验已清理，SQLite 历史记录位于被 Git 忽略的 `.state/`。
 - 未验证完整 full 部署、真实 OpenSearch 管线、第二套 demo、Docker Compose、网络注入、API 停机期间独立硬 TTL。停机恢复依赖 API 重启或离线恢复脚本；没有硬 TTL 保证。
+
+## 系统概览消费方样例
+
+新增 `examples/system_overview.py` 后测试总数为 **24 passed**。新增测试验证全服务自动查询、缺失能力跳过、部分后端失败保留、重复 trace 去重、时间窗过滤、服务名映射、直接父子调用边、成员关系、HTML 内容转义及缺失数值处理。
+
+真实 HTTP 样例以 60 分钟窗口查询当前 API：发现 3 个服务，执行 9 次遥测查询（5 次非空、4 次空结果），得到 14 个去重 span、75 条数据库日志、21 条 flagd 日志及 product-catalog RPC 指标序列。生成 `.reports/overview.txt`、`.reports/overview.html`、`.reports/overview.json`，实验只读取列表，未执行或刷新实验。

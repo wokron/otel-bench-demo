@@ -170,3 +170,14 @@ uv run python scripts/export_contract.py
 conformance 默认只查询和预览，不实际注入。`--require-records logs` 可进一步要求日志非空，但安静服务在五分钟窗口内没有日志是合法情况。集成检查之前需启动 API 并产生业务流量。
 
 同类 Kubernetes demo 首先复制 `configs/backend-template.yaml`，按实际情况填写 namespace/标签/endpoint/metric 模板即可。新增协议或基础设施时实现 `plugins.py` 中对应角色，在第三方包声明 `demo_api.providers` entry point。完整 agent 实现步骤、必须满足的语义和交付要求在 [SPEC.md](SPEC.md)。
+
+## 生成整个目标系统的近期观测报告
+
+提供了仅通过公共 HTTP 接口工作的 [完整样例](../examples/README.md)：自动发现全部 target 和服务，查询所有已公布指标、日志、traces 与近期实验，打印文本并生成离线 HTML 图形和 JSON 证据。
+
+```bash
+uv run python examples/system_overview.py --minutes 60 --output .reports/overview
+# 浏览器打开 .reports/overview.html
+```
+
+图形区分服务/实例成员关系与 trace 中直接观察到的跨服务调用；报告保留空数据、后端错误、采样和截断说明。它不会执行故障，也不假定系统一定拥有某种指标。
