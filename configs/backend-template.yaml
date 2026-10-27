@@ -1,0 +1,38 @@
+# Copy, inspect the actual deployment, and replace every example value before use.
+# This is an onboarding template, NOT a verified deployment of another demo.
+spec_version: demo-api/v1
+state_path: .state/other-demo.sqlite3
+targets:
+  - id: other-demo
+    description: Replace with demo version, deployment mode and tested scope
+    discovery:
+      plugin: kubernetes
+      config:
+        context: REPLACE_CONTEXT
+        namespace: REPLACE_NAMESPACE
+        selector: app.kubernetes.io/part-of=REPLACE_DEMO
+        service_label: app.kubernetes.io/name
+        telemetry_service_names:
+          example-web: example-web-otel-name
+    telemetry:
+      traces:
+        plugin: jaeger
+        config:
+          url: http://127.0.0.1:16686
+          api_path: /api
+      logs:
+        plugin: kubernetes-logs
+        config: {}
+      metrics:
+        plugin: prometheus
+        config:
+          url: http://127.0.0.1:9090
+          metrics:
+            requests.rate:
+              unit: requests/s
+              description: Replace with a verified request-rate metric and exact label mapping
+              promql: 'sum(rate(http_requests_total{service=$service}[1m]))'
+    actions:
+      plugin: chaosblade
+      config:
+        allowed_actions: [pod.kill]

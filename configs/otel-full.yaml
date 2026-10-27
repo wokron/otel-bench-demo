@@ -1,0 +1,36 @@
+spec_version: demo-api/v1
+state_path: .state/experiments.sqlite3
+targets:
+  - id: otel-demo
+    description: OpenTelemetry Demo full deployment on minikube
+    discovery:
+      plugin: kubernetes
+      config:
+        context: minikube
+        namespace: otel-demo
+        selector: opentelemetry.io/name
+        service_label: opentelemetry.io/name
+    telemetry:
+      traces:
+        plugin: jaeger
+        config:
+          service: jaeger
+          port: 16686
+          api_path: /jaeger/ui/api
+      logs:
+        plugin: kubernetes-logs
+        config: {}
+      metrics:
+        plugin: prometheus
+        config:
+          service: prometheus
+          port: 9090
+          metrics:
+            rpc.calls:
+              unit: calls
+              description: Cumulative RPC calls exported by application instrumentation
+              promql: 'sum by (job) (rpc_server_call_duration_seconds_count{job=$service})'
+    actions:
+      plugin: chaosblade
+      config:
+        allowed_actions: [pod.kill, cpu.load, network.delay]
