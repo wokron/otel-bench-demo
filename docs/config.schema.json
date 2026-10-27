@@ -1,0 +1,100 @@
+{
+  "$defs": {
+    "ProviderConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "plugin": {
+          "title": "Plugin",
+          "type": "string"
+        },
+        "config": {
+          "additionalProperties": true,
+          "title": "Config",
+          "type": "object"
+        }
+      },
+      "required": [
+        "plugin"
+      ],
+      "title": "ProviderConfig",
+      "type": "object"
+    },
+    "TargetConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-z][a-z0-9-]{0,62}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "discovery": {
+          "$ref": "#/$defs/ProviderConfig"
+        },
+        "telemetry": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ProviderConfig"
+          },
+          "propertyNames": {
+            "enum": [
+              "metrics",
+              "logs",
+              "traces"
+            ]
+          },
+          "title": "Telemetry",
+          "type": "object"
+        },
+        "actions": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProviderConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "id",
+        "description",
+        "discovery",
+        "telemetry"
+      ],
+      "title": "TargetConfig",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "spec_version": {
+      "const": "demo-api/v1",
+      "title": "Spec Version",
+      "type": "string"
+    },
+    "state_path": {
+      "default": ".state/experiments.sqlite3",
+      "title": "State Path",
+      "type": "string"
+    },
+    "targets": {
+      "items": {
+        "$ref": "#/$defs/TargetConfig"
+      },
+      "minItems": 1,
+      "title": "Targets",
+      "type": "array"
+    }
+  },
+  "required": [
+    "spec_version",
+    "targets"
+  ],
+  "title": "Config",
+  "type": "object"
+}
