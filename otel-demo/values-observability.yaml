@@ -1,0 +1,21 @@
+# Optional overlay for catalog: queryable metrics via Prometheus OTLP receiver.
+prometheus:
+  enabled: true
+  server:
+    fullnameOverride: otel-demo-prometheus
+    resources:
+      limits:
+        memory: 300Mi
+opentelemetry-collector:
+  alternateConfig:
+    exporters:
+      otlp_http/prometheus:
+        endpoint: http://otel-demo-prometheus:9090/api/v1/otlp
+        tls:
+          insecure: true
+    service:
+      pipelines:
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [otlp_http/prometheus]

@@ -1,0 +1,116 @@
+components:
+  accounting:
+    enabled: false
+  ad:
+    enabled: false
+  agent:
+    enabled: false
+  cart:
+    enabled: false
+  chatbot:
+    enabled: false
+  checkout:
+    enabled: false
+  currency:
+    enabled: false
+  email:
+    enabled: false
+  fraud-detection:
+    enabled: false
+  frontend:
+    enabled: false
+  frontend-proxy:
+    enabled: false
+  image-provider:
+    enabled: false
+  load-generator:
+    enabled: false
+  mcp:
+    enabled: false
+  payment:
+    enabled: false
+  quote:
+    enabled: false
+  recommendation:
+    enabled: false
+  shipping:
+    enabled: false
+  kafka:
+    enabled: false
+  valkey-cart:
+    enabled: false
+  telemetry-docs:
+    enabled: false
+  opamp-server:
+    enabled: false
+  product-catalog:
+    resources:
+      limits:
+        memory: 64Mi
+
+opensearch:
+  enabled: false
+prometheus:
+  enabled: false
+grafana:
+  enabled: false
+
+opentelemetry-collector:
+  mode: deployment
+  replicaCount: 1
+  presets:
+    annotationDiscovery:
+      metrics:
+        enabled: false
+    kubernetesAttributes:
+      enabled: false
+    kubernetesEvents:
+      enabled: false
+    clusterMetrics:
+      enabled: false
+    kubeletMetrics:
+      enabled: false
+    logsCollection:
+      enabled: false
+  alternateConfig:
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 160
+        spike_limit_mib: 40
+      batch: {}
+    exporters:
+      otlp_grpc/jaeger:
+        endpoint: jaeger:4317
+        tls:
+          insecure: true
+      debug:
+        verbosity: basic
+    service:
+      extensions: [health_check]
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [otlp_grpc/jaeger]
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [debug]
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [debug]
+  resources:
+    limits:
+      memory: 200Mi
