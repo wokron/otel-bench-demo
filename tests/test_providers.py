@@ -128,3 +128,17 @@ def test_external_plugin_entry_point(monkeypatch):
     monkeypatch.setattr(plugins, "entry_points", lambda **kw: [SimpleNamespace(load=lambda: factory)])
     assert plugins.load_provider("external-demo", {"endpoint": "local"}, {"target_id": "other"}) == (
         {"endpoint": "local"}, {"target_id": "other"})
+
+
+@pytest.mark.parametrize('tags,expected', [
+    ({'otel.status_code': 'ERROR'}, 'error'),
+    ({'http.response.status_code': 503}, 'error'),
+    ({'http.status_code': '500'}, 'error'),
+    ({'rpc.grpc.status_code': 14}, 'error'),
+    ({'rpc.response.status_code': 'UNAVAILABLE'}, 'error'),
+    ({'rpc.grpc.status_code': 0, 'http.status_code': 200}, 'unset'),
+    ({'http.status_code': 404}, 'unset'),
+])
+def test_span_error_normalization_across_languages(tags, expected):
+    from demo_api.providers.telemetry import span_status
+    assert span_status(tags) == expected

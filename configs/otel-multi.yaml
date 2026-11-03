@@ -1,0 +1,194 @@
+spec_version: demo-api/v1
+state_path: .state/experiments.sqlite3
+targets:
+- id: otel-full-existing
+  description: Existing my-otel-demo release in default namespace; OpenSearch disabled;
+    built-in load generator active
+  discovery:
+    plugin: kubernetes
+    config:
+      context: minikube
+      namespace: default
+      selector: opentelemetry.io/name
+      service_label: opentelemetry.io/name
+  telemetry:
+    traces:
+      plugin: jaeger
+      config:
+        service: jaeger
+        port: 16686
+        api_path: /jaeger/ui/api
+    logs:
+      plugin: kubernetes-logs
+      config:
+        warnings:
+        - 'Existing release has no OpenSearch: OTLP log export fails; this provider
+          reads Pod stdout/stderr only.'
+    metrics:
+      plugin: prometheus
+      config:
+        service: prometheus
+        port: 9090
+        metrics:
+          server.span.rate:
+            unit: spans/s
+            description: Five-minute rate of sampled server spans; may include nested
+              server instrumentation; not exact end-user RPS
+            promql: sum(rate(traces_span_metrics_calls_total{service_name=$service,k8s_namespace_name=~"default|",host_name=~"otel-collector-agent-.*",span_kind="SPAN_KIND_SERVER"}[5m]))
+            services: &id001
+            - ad
+            - cart
+            - checkout
+            - currency
+            - email
+            - flagd
+            - frontend
+            - frontend-proxy
+            - image-provider
+            - payment
+            - product-catalog
+            - quote
+            - recommendation
+            - shipping
+          server.span.errors.rate:
+            unit: errors/s
+            description: Five-minute error rate from server span status
+            promql: sum(rate(traces_span_metrics_calls_total{service_name=$service,k8s_namespace_name=~"default|",host_name=~"otel-collector-agent-.*",span_kind="SPAN_KIND_SERVER",status_code="STATUS_CODE_ERROR"}[5m]))
+              or (0 * (sum(rate(traces_span_metrics_calls_total{service_name=$service,k8s_namespace_name=~"default|",host_name=~"otel-collector-agent-.*",span_kind="SPAN_KIND_SERVER"}[5m]))))
+            services: *id001
+          server.span.errors.ratio:
+            unit: ratio
+            description: Fraction of sampled server spans with ERROR status; undefined
+              at zero traffic
+            promql: (sum(rate(traces_span_metrics_calls_total{service_name=$service,k8s_namespace_name=~"default|",host_name=~"otel-collector-agent-.*",span_kind="SPAN_KIND_SERVER",status_code="STATUS_CODE_ERROR"}[5m]))
+              or (0 * (sum(rate(traces_span_metrics_calls_total{service_name=$service,k8s_namespace_name=~"default|",host_name=~"otel-collector-agent-.*",span_kind="SPAN_KIND_SERVER"}[5m])))))
+              / (sum(rate(traces_span_metrics_calls_total{service_name=$service,k8s_namespace_name=~"default|",host_name=~"otel-collector-agent-.*",span_kind="SPAN_KIND_SERVER"}[5m])))
+            services: *id001
+          server.span.latency.p95:
+            unit: ms
+            description: Approximate five-minute histogram p95 of sampled server span
+              duration; not end-to-end request p95
+            promql: histogram_quantile(0.95, sum by (le) (rate(traces_span_metrics_duration_milliseconds_bucket{service_name=$service,k8s_namespace_name=~"default|",host_name=~"otel-collector-agent-.*",span_kind="SPAN_KIND_SERVER"}[5m])))
+            services: *id001
+          go.runtime.memory:
+            unit: bytes
+            description: Go runtime memory used, not container RSS
+            promql: sum(go_memory_used_bytes{service_name=$service,k8s_namespace_name="default"})
+            services:
+            - checkout
+            - product-catalog
+            - load-generator
+          jvm.memory:
+            unit: bytes
+            description: JVM used memory across memory pools, not container RSS
+            promql: sum(jvm_memory_used_bytes{service_name=$service})
+            services:
+            - ad
+            - fraud-detection
+            - kafka
+          db.connections:
+            unit: connections
+            description: SQL connection pool by status
+            promql: sum by (status) (db_sql_connection_open{service_name=$service,k8s_namespace_name="default"})
+            services:
+            - product-catalog
+          cache.memory:
+            unit: bytes
+            description: Valkey memory used, exported by Redis receiver
+            promql: sum(redis_memory_used_bytes{service_name=$service,k8s_namespace_name="default"})
+            services:
+            - valkey-cart
+        warnings:
+        - Server span metrics are sampled telemetry, not exact end-user request counts;
+          nested server instrumentation may double count.
+        - Some services lack Kubernetes namespace attributes; templates also match
+          the existing otel-collector-agent host name.
+  actions:
+    plugin: chaosblade
+    config:
+      allowed_actions:
+      - pod.kill
+      - cpu.load
+      - network.delay
+- id: otel-demo
+  description: OpenTelemetry Demo catalog with Prometheus overlay on minikube
+  discovery:
+    plugin: kubernetes
+    config:
+      context: minikube
+      namespace: otel-demo
+      selector: opentelemetry.io/name
+      service_label: opentelemetry.io/name
+  telemetry:
+    traces:
+      plugin: jaeger
+      config:
+        service: jaeger
+        port: 16686
+        api_path: /jaeger/ui/api
+    logs:
+      plugin: kubernetes-logs
+      config: {}
+    metrics:
+      plugin: prometheus
+      config:
+        service: otel-demo-prometheus
+        port: 9090
+        metrics:
+          rpc.calls:
+            unit: calls
+            description: Cumulative RPC calls exported by application instrumentation;
+              use rpc.rate for throughput
+            promql: sum by (job) (rpc_server_call_duration_seconds_count{job=$service})
+            services:
+            - product-catalog
+          rpc.rate:
+            unit: calls/s
+            description: Five-minute rate of RPC calls for this service; excludes
+              gRPC reflection
+            promql: sum by (job) (rate(rpc_server_call_duration_seconds_count{job=$service,rpc_method!~"grpc.reflection.*"}[5m]))
+            services:
+            - product-catalog
+          rpc.errors.rate:
+            unit: errors/s
+            description: Five-minute rate of RPC calls whose response status is not
+              OK; excludes gRPC reflection
+            promql: sum by (job) (rate(rpc_server_call_duration_seconds_count{job=$service,rpc_method!~"grpc.reflection.*",rpc_response_status_code!="OK"}[5m]))
+              or (0 * sum by (job) (rate(rpc_server_call_duration_seconds_count{job=$service,rpc_method!~"grpc.reflection.*"}[5m])))
+            services:
+            - product-catalog
+          rpc.latency.p95:
+            unit: seconds
+            description: Approximate 95th percentile server RPC duration over five
+              minutes; excludes gRPC reflection
+            promql: histogram_quantile(0.95, sum by (job, le) (rate(rpc_server_call_duration_seconds_bucket{job=$service,rpc_method!~"grpc.reflection.*"}[5m])))
+            services:
+            - product-catalog
+          runtime.memory:
+            unit: bytes
+            description: Go runtime memory used, including stack and other allocations
+            services:
+            - product-catalog
+            promql: sum by (job) (go_memory_used_bytes{job=$service})
+          db.connections:
+            unit: connections
+            description: Application SQL pool connections by status
+            services:
+            - product-catalog
+            promql: sum by (status) (db_sql_connection_open{job=$service})
+          rpc.errors.ratio:
+            unit: ratio
+            description: Five-minute fraction of failed business RPC calls; null when
+              no traffic
+            services:
+            - product-catalog
+            promql: (sum by (job) (rate(rpc_server_call_duration_seconds_count{job=$service,rpc_method!~"grpc.reflection.*",rpc_response_status_code!="OK"}[5m]))
+              or (0 * sum by (job) (rate(rpc_server_call_duration_seconds_count{job=$service,rpc_method!~"grpc.reflection.*"}[5m]))))
+              / (sum by (job) (rate(rpc_server_call_duration_seconds_count{job=$service,rpc_method!~"grpc.reflection.*"}[5m])))
+  actions:
+    plugin: chaosblade
+    config:
+      allowed_actions:
+      - pod.kill
+      - cpu.load
+      - network.delay

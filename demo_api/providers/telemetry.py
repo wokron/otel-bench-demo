@@ -10,6 +10,19 @@ def iso(timestamp):
     return datetime.fromtimestamp(timestamp, timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def span_status(tags):
+    """Jaeger exporters encode failures using both OTel status and protocol tags."""
+    if tags.get("error") is True or str(tags.get("otel.status_code", "")).upper() == "ERROR":
+        return "error"
+    http_status = tags.get("http.response.status_code", tags.get("http.status_code"))
+    if http_status is not None and str(http_status).isdigit() and int(http_status) >= 500:
+        return "error"
+    rpc_status = tags.get("rpc.response.status_code", tags.get("rpc.grpc.status_code"))
+    if rpc_status is not None and str(rpc_status).upper() not in {"0", "OK"}:
+        return "error"
+    return "unset"
+
+
 class Backend:
     def __init__(self, config, context):
         self.config = config
@@ -17,7 +30,8 @@ class Backend:
         self.kube = getattr(self.discovery, "kube", None)
 
     def describe(self):
-        return {"provider": self.__class__.__name__.lower(), "configured": True}
+        return {"provider": self.__class__.__name__.lower(), "configured": True,
+                "warnings": self.config.get("warnings", [])}
 
 
 class Jaeger(Backend):
@@ -46,7 +60,7 @@ class Jaeger(Backend):
                     "service": processes.get(span.get("processID"), {}).get("serviceName"),
                     "name": span["operationName"], "timestamp": iso(span["startTime"] / 1e6),
                     "duration_ms": span["duration"] / 1000, "attributes": tags,
-                    "status": "error" if tags.get("error") is True else "unset",
+                    "status": span_status(tags),
                 })
             records.append({"trace_id": trace["traceID"], "spans": spans})
         return Observation(signal="traces", source="jaeger", records=records[:q.limit],
@@ -130,7 +144,8 @@ class KubernetesLogs(Backend):
         records.sort(key=lambda r: r["timestamp"], reverse=True)
         return Observation(signal="logs", source="kubernetes-logs", records=records[:q.limit],
                            truncated=truncated or len(records) > q.limit,
-                           warnings=["Application stdout/stderr, not Collector OTLP log storage; no previous-container logs."])
+                           warnings=["Application stdout/stderr, not Collector OTLP log storage; no previous-container logs.",
+                                     *self.config.get("warnings", [])])
 
 
 class OpenSearch(Backend):
