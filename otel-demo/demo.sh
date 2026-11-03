@@ -45,6 +45,8 @@ Usage: bash otel-demo/demo.sh COMMAND [catalog|full]
   deploy   Install/upgrade and wait for readiness (TIMEOUT=15m)
   status   Show workloads and recent events
   check    Verify application requests and stored traces (full also checks logs)
+  chaos-install  Install/upgrade ChaosBlade in this cluster
+  chaos-check    Check ChaosBlade readiness and runtime compatibility
   forward  Expose catalog gRPC + Jaeger, or full frontend proxy, on localhost
   delete   Uninstall this Helm release; keep minikube and namespace
 Environment: PROFILE, NAMESPACE, RELEASE, HELM, CACHE_DIR, GRPCURL,
@@ -83,6 +85,11 @@ USAGE
         need python3
         need kubectl
         exec python3 "$script_dir/check.py" "$mode" "$profile" "$namespace"
+        ;;
+    chaos-install|chaos-check)
+        chaos_command=install
+        if [[ "$command_name" == chaos-check ]]; then chaos_command=check; fi
+        exec bash "$script_dir/../scripts/chaosblade.sh" "$chaos_command"
         ;;
     forward)
         need kubectl
