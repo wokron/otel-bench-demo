@@ -85,3 +85,42 @@ def test_metric_samples_keep_units_timestamps_and_unknown_values():
     assert "&lt;unsafe&gt;" in plot and "<unsafe>" not in plot
     assert "min=4, max=4" in plot
     assert "无有效数值样本" in metric_svg(points[:1], "metric")
+
+
+def test_metric_applicability_skips_uninstrumented_services():
+    import json
+    now = datetime.now(timezone.utc)
+    queried = []
+    def handler(req):
+        if req.method == 'POST':
+            queried.append(json.loads(req.content))
+            return httpx.Response(200, json={'data': {'records': [], 'source': 'mock'}})
+        key = req.url.path.rsplit('/', 1)[1]
+        values = {
+            'entities': {'entities': [{'id': 't/service/' + n, 'name': n, 'kind': 'service'} for n in ['app', 'db']]},
+            'capabilities': {'telemetry': {'metrics': {'configured': True, 'metrics': [
+                {'name': 'rpc.rate', 'services': ['app']}]}}},
+            'relations': {'relations': []}, 'experiments': {'experiments': []}}
+        return httpx.Response(200, json=values[key])
+    with httpx.Client(base_url='http://api', transport=httpx.MockTransport(handler)) as client:
+        snapshot = collect(client, {'id': 't'}, now - timedelta(minutes=1), now)
+    assert len(queried) == 1 and queried[0]['service'] == 'app'
+    assert summarize(snapshot, now - timedelta(minutes=1), now)['findings']
+
+
+def test_database_dependency_requires_exact_entity_evidence_and_operations_separate():
+    now = datetime.now(timezone.utc)
+    span = {'trace_id': 'a', 'span_id': '1', 'service': 'web', 'name': 'sql.query',
+            'timestamp': now.isoformat(), 'duration_ms': 2, 'status': 'unset',
+            'attributes': {'db.system.name': 'postgresql', 'server.address': 'db'}}
+    snapshot = {'resources': {
+        'entities': {'value': {'entities': [{'id': n, 'kind': 'service', 'name': n} for n in ['web', 'db']]}},
+        'relations': {'value': {'relations': []}}}, 'observations': [
+            {'service': 'web', 'signal': 'traces', 'metric': None, 'status': 'ok',
+             'value': {'data': {'records': [{'spans': [span]}]}}}]}
+    summary = summarize(snapshot, now - timedelta(minutes=1), now)
+    assert summary['dependencies'][0]['target'] == 'db'
+    assert summary['operations'][0]['kind'] == 'database'
+    assert summary['operations'][0]['p95_ms'] == 2
+    span['attributes']['server.address'] = 'some-external-db'
+    assert not summarize(snapshot, now - timedelta(minutes=1), now)['dependencies']

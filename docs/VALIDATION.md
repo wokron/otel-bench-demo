@@ -78,3 +78,13 @@ PASS action preview: network.delay
 通过真实 HTTP API 运行 `scripts/chaos_smoke.py --execute --action pod.kill`，实验 `da-1e198a5295e94ce499b7aace9ce08d62` 从 pending 进入 running，backend resStatuses.success=true；目标为 `otel-demo/minikube/product-catalog-6d6b5cbfbd-ch4f2`。脚本通过 DELETE 请求清理并确认 cancelled，最终无 ChaosBlade CR。新 Pod `product-catalog-6d6b5cbfbd-nqhrv` Ready；原业务检查返回 10 件商品，并确认 fresh traces 和 PostgreSQL spans。
 
 测试总数 **26 passed**；新增用例验证 smoke 脚本成功和后端失败时均请求清理。Shell 语法检查通过。此次未重新执行 CPU/网络注入，也没有调整 Docker daemon。
+
+## 2026-11-03 概览数据质量改进
+
+实际排查发现 catalog 没有持续负载，改进前仅公布一个累计 RPC counter；将该指标查向数据库和 flagd 会产生不适用的空结果。真实 Prometheus 查询进一步确认 1 分钟 rate 窗口经常没有足够的导出样本，而 5 分钟窗口可返回速率。
+
+新增有限流量脚本运行 120 秒，208 次 ListProducts 全部成功；报告仍是只读消费方。catalog 配置扩充为 7 类指标，声明仅适用 product-catalog。业务速率/错误/分位数排除 reflection，错误比率无流量时保留 null，不填充为健康的零。
+
+使用真实 API 生成最近 10 分钟报告（limit=500），得到 624 个去重 span，其中 208 个数据库 span 的 server.address 精确匹配 astronomy-db。示例快照：5 分钟业务速率约 0.3583 calls/s，错误比率 0%，Prometheus 直方图 P95 4.75 ms，Go runtime 内存 17578248 bytes，SQL 池 idle=1/inuse=0。这是有限流量后的窗口数据，不是持续负载基准；直方图 P95 和 trace 样本分位数算法不同。
+
+HTML 新增就绪/重启/指标卡片、重点发现、明确数据库依赖、操作级追踪表与有数值刻度的趋势图；当前图形报告含 9 个有效 SVG。28 项测试通过。未增加基础设施 CPU/RSS、数据库 exporter、持久化日志或源采集时间检测；未观测到的能力仍按缺口呈现。

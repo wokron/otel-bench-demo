@@ -128,3 +128,7 @@ chaos-mesh = "my_demo.actions:ChaosMesh"
 6. 交付说明 MUST 含配置、部署/启动/恢复命令、版本、测试结果、限制。不得宣称未运行过的第二个 demo 已接入成功。
 
 当前协议刻意不承诺自动推断指标、完整服务调用图、跨后端查询优化、所有微服务 demo 开箱即用，也不包含实验调度、根因分析或 agent 本身。后续添加 Loki、Tempo、Docker Compose、Chaos Mesh 等后端时，应保持上述 REST 契约和实体身份语义。
+
+### v1 可选能力元数据补充
+
+metric 的 describe 项可增加 `services: [service_name, ...]`，表示配置适用的部署逻辑服务名；省略时由消费方视为可向任意已发现服务查询。此字段不保证每次查询非空，也不替代 API 的实体范围校验。Kubernetes Pod attributes 新增可选 `ready`（未知时 null）、`restarts`（当前 Pod 各普通容器累计重启数）、`created_at`，不应将其误读为查询时间窗内的重启数。

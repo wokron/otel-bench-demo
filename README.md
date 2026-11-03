@@ -17,6 +17,8 @@ uv run demo-api --config configs/otel-catalog-metrics.yaml
 
 当前机器已为 `otel-demo` namespace 的 catalog 启用可查询的 Prometheus，并安装 ChaosBlade。原始 catalog 可用 `configs/otel-catalog.yaml`（不声明 metrics）；其他机器需先按 API 文档部署对应组件。Pod 删除故障已验证，CPU/网络依赖的容器运行时兼容性限制见 API 文档。以下保留原有部署调查记录；其中的五 Pod 数量指未启用指标 overlay 的原始 catalog。
 
+如果报告的观测数据较少，可以运行 `otel-demo/traffic.py --duration 120` 产生一段商品查询流量（需要 grpcurl），再用 `uv run python examples/system_overview.py --minutes 15` 生成报告。catalog metrics 配置同时查询 RPC 速率、错误速率和 P95 延迟；空结果会被标记为“无法判断”，不会当作系统健康。
+
 ---
 
 # 在 minikube 上运行 OpenTelemetry Demo
