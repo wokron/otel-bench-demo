@@ -57,7 +57,8 @@ class Jaeger(Backend):
 class Prometheus(Backend):
     def describe(self):
         return {**super().describe(), "metrics": [
-            {"name": name, "unit": spec["unit"], "description": spec["description"]}
+            {"name": name, "unit": spec["unit"], "description": spec["description"],
+             **({"services": spec["services"]} if "services" in spec else {})}
             for name, spec in self.config["metrics"].items()]}
 
     def query(self, q):

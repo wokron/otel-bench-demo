@@ -1,36 +1,85 @@
 spec_version: demo-api/v1
 state_path: .state/experiments.sqlite3
 targets:
-  - id: otel-demo
-    description: OpenTelemetry Demo catalog with Prometheus overlay on minikube
-    discovery:
-      plugin: kubernetes
+- id: otel-demo
+  description: OpenTelemetry Demo catalog with Prometheus overlay on minikube
+  discovery:
+    plugin: kubernetes
+    config:
+      context: minikube
+      namespace: otel-demo
+      selector: opentelemetry.io/name
+      service_label: opentelemetry.io/name
+  telemetry:
+    traces:
+      plugin: jaeger
       config:
-        context: minikube
-        namespace: otel-demo
-        selector: opentelemetry.io/name
-        service_label: opentelemetry.io/name
-    telemetry:
-      traces:
-        plugin: jaeger
-        config:
-          service: jaeger
-          port: 16686
-          api_path: /jaeger/ui/api
-      logs:
-        plugin: kubernetes-logs
-        config: {}
-      metrics:
-        plugin: prometheus
-        config:
-          service: otel-demo-prometheus
-          port: 9090
-          metrics:
-            rpc.calls:
-              unit: calls
-              description: Cumulative RPC calls exported by application instrumentation
-              promql: 'sum by (job) (rpc_server_call_duration_seconds_count{job=$service})'
-    actions:
-      plugin: chaosblade
+        service: jaeger
+        port: 16686
+        api_path: /jaeger/ui/api
+    logs:
+      plugin: kubernetes-logs
+      config: {}
+    metrics:
+      plugin: prometheus
       config:
-        allowed_actions: [pod.kill, cpu.load, network.delay]
+        service: otel-demo-prometheus
+        port: 9090
+        metrics:
+          rpc.calls:
+            unit: calls
+            description: Cumulative RPC calls exported by application instrumentation;
+              use rpc.rate for throughput
+            promql: sum by (job) (rpc_server_call_duration_seconds_count{job=$service})
+            services:
+            - product-catalog
+          rpc.rate:
+            unit: calls/s
+            description: Five-minute rate of RPC calls for this service; excludes
+              gRPC reflection
+            promql: sum by (job) (rate(rpc_server_call_duration_seconds_count{job=$service,rpc_method!~"grpc.reflection.*"}[5m]))
+            services:
+            - product-catalog
+          rpc.errors.rate:
+            unit: errors/s
+            description: Five-minute rate of RPC calls whose response status is not
+              OK; excludes gRPC reflection
+            promql: sum by (job) (rate(rpc_server_call_duration_seconds_count{job=$service,rpc_method!~"grpc.reflection.*",rpc_response_status_code!="OK"}[5m]))
+              or (0 * sum by (job) (rate(rpc_server_call_duration_seconds_count{job=$service,rpc_method!~"grpc.reflection.*"}[5m])))
+            services:
+            - product-catalog
+          rpc.latency.p95:
+            unit: seconds
+            description: Approximate 95th percentile server RPC duration over five
+              minutes; excludes gRPC reflection
+            promql: histogram_quantile(0.95, sum by (job, le) (rate(rpc_server_call_duration_seconds_bucket{job=$service,rpc_method!~"grpc.reflection.*"}[5m])))
+            services:
+            - product-catalog
+          runtime.memory:
+            unit: bytes
+            description: Go runtime memory used, including stack and other allocations
+            services:
+            - product-catalog
+            promql: sum by (job) (go_memory_used_bytes{job=$service})
+          db.connections:
+            unit: connections
+            description: Application SQL pool connections by status
+            services:
+            - product-catalog
+            promql: sum by (status) (db_sql_connection_open{job=$service})
+          rpc.errors.ratio:
+            unit: ratio
+            description: Five-minute fraction of failed business RPC calls; null when
+              no traffic
+            services:
+            - product-catalog
+            promql: (sum by (job) (rate(rpc_server_call_duration_seconds_count{job=$service,rpc_method!~"grpc.reflection.*",rpc_response_status_code!="OK"}[5m]))
+              or (0 * sum by (job) (rate(rpc_server_call_duration_seconds_count{job=$service,rpc_method!~"grpc.reflection.*"}[5m]))))
+              / (sum by (job) (rate(rpc_server_call_duration_seconds_count{job=$service,rpc_method!~"grpc.reflection.*"}[5m])))
+  actions:
+    plugin: chaosblade
+    config:
+      allowed_actions:
+      - pod.kill
+      - cpu.load
+      - network.delay

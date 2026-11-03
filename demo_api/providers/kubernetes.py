@@ -70,6 +70,9 @@ class KubernetesDiscovery:
                 "service": service, "namespace": self.kube.namespace,
                 "node": pod.get("spec", {}).get("nodeName"),
                 "phase": pod.get("status", {}).get("phase"),
+                "ready": next((c.get("status") == "True" for c in pod.get("status", {}).get("conditions", []) if c.get("type") == "Ready"), None),
+                "restarts": sum(c.get("restartCount", 0) for c in pod.get("status", {}).get("containerStatuses", [])),
+                "created_at": pod["metadata"].get("creationTimestamp"),
                 "containers": [c["name"] for c in pod["spec"]["containers"]],
             }))
         entities += [Entity(id=self.service_id(s), kind="service", name=s, attributes={
