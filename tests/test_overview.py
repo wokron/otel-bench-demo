@@ -59,7 +59,8 @@ def test_overview_discovers_queries_deduplicates_and_preserves_failures():
     text = render_text(report)
     assert "backend_unavailable" in text and "truncated=True" in text and "exp" in text
     html = render_html(report, text)
-    assert "<script>" not in html and "&lt;script&gt;" in html
+    assert html.count("<script>") == 1 and "&lt;script&gt;" in html
+    assert '<script>alert("oops")</script>' not in html
     assert "marker-end" in html
 
 
@@ -124,3 +125,15 @@ def test_database_dependency_requires_exact_entity_evidence_and_operations_separ
     assert summary['operations'][0]['p95_ms'] == 2
     span['attributes']['server.address'] = 'some-external-db'
     assert not summarize(snapshot, now - timedelta(minutes=1), now)['dependencies']
+
+
+def test_many_service_graph_focus_preserves_evidence_and_escapes_names():
+    from examples.system_overview import topology_svg
+    summary = {'services': {f'service-{i}': {'pods': []} for i in range(25)},
+               'call_edges': [{'source': 'service-0', 'target': 'service-24', 'observed_spans': 7}],
+               'dependencies': []}
+    graph = topology_svg(summary)
+    assert 'data-source="service-0"' in graph and 'data-target="service-24"' in graph
+    assert 'parent-child span' in graph and '7 spans' in graph
+    assert 'viewBox="0 0 1200 970"' in graph
+    assert graph.count('class="service-node"') == 25

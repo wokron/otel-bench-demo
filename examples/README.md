@@ -5,7 +5,7 @@
 在 `impl` 目录启动 API，然后在另一个终端运行样例：
 
 ```bash
-uv run demo-api --config configs/otel-catalog-metrics.yaml
+uv run demo-api --config configs/otel-multi.yaml
 ```
 
 ```bash
@@ -25,7 +25,7 @@ xdg-open .reports/overview.html
 输出：
 
 - **终端及 `.txt`**：目标及能力、服务/实例、查询覆盖与失败、指标统计、日志样本、span 数与错误标志、采样 span p95、近期/未结束实验。
-- **`.html`**：可离线打开，无 JavaScript/CDN 依赖；展示服务和实例结构图、从 trace 直接观察到的跨服务调用边、各指标的 SVG 时间曲线，以及完整文本。原始日志和实体名称经过 HTML 转义。
+- **`.html`**：可离线打开，不依赖 CDN；内联 JavaScript 支持点击服务突出相邻依赖；展示服务和实例结构图、从 trace 直接观察到的跨服务调用边、各指标的 SVG 时间曲线，以及完整文本。原始日志和实体名称经过 HTML 转义。
 - **`.json`**：保存本次读取的资源、查询结果、错误及摘要，便于后续 agent 复核或分析。文件可能包含应用日志、SQL 和其他遥测内容，输出目录默认由 Git 忽略。
 
 支持通过环境变量 `DEMO_API_TOKEN` 传递 Bearer token。`--target` 可重复指定；`--minutes` 为 1..60，符合现有 API 一小时时间窗限制。查询使用共同的 UTC 时间窗，`--limit` 对每个服务、每种信号及每个指标分别生效，不是整个报告总上限。用 `--workers` 限制并发，默认最多 4 次遥测查询并行；源系统较慢时可以改为 1。指标自动从 capabilities 中逐一读取，没有写死 otel-demo 的服务名或指标名称。
@@ -75,3 +75,8 @@ uv run python examples/system_overview.py --minutes 10 --limit 300
 数据库依赖与 RPC 边分别保留证据：只有数据库 span 的 server.address 精确等于已发现服务时才画数据库访问边，不把任意数据库名映射成服务。操作级统计分别展示 ListProducts、SQL 和 reflection，避免把长连接或 reflection 的时延当作商品查询时延。缺少观测、无有效数值、查询失败与命中结果上限均在重点发现中说明。
 
 Prometheus range query 的点时间是求值时间，不是原始采集时间；报告不能据此证明源数据实时更新。真正的源样本新鲜度、CPU/容器内存、更多应用组件和持久化日志需要额外采集配置，不能由报告凭空补齐。
+
+
+## 同时查看旧完整业务部署
+
+使用 `configs/otel-multi.yaml` 启动 API，默认报告先展示 `otel-full-existing`（default/my-otel-demo），再展示 catalog。只查询旧环境可加 `--target otel-full-existing`。25 个应用组件的指标按服务声明适用范围，直接父子调用关系、数据库/缓存地址依赖保留来源；详见 [旧部署接入说明](../docs/EXISTING-FULL.md)。

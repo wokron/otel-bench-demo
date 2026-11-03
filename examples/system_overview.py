@@ -159,7 +159,12 @@ def summarize(snapshot, start, end):
                 s["durations_ms"].append(span["duration_ms"])
             attrs = span.get("attributes", {})
             # Classify long-lived streams/reflection separately from business operations.
-            kind = "database" if attrs.get("db.system.name") or attrs.get("db.system") else "rpc" if attrs.get("span.kind") == "server" else "other"
+            span_kind = str(attrs.get("span.kind", "")).lower()
+            kind = ("database" if attrs.get("db.system.name") or attrs.get("db.system") else
+                    "messaging" if attrs.get("messaging.system") else
+                    "http" if span_kind == "server" and (attrs.get("http.method") or attrs.get("http.request.method")) else
+                    "rpc" if span_kind == "server" and (attrs.get("rpc.system") or attrs.get("rpc.system.name")) else
+                    span_kind or "other")
             op_key = (source, span.get("name", "?"), kind)
             op = operations.setdefault(op_key, {"service": source, "name": span.get("name", "?"), "kind": kind,
                                                  "samples": 0, "errors": 0, "durations": []})
@@ -174,6 +179,16 @@ def summarize(snapshot, start, end):
                 dep = dependencies.setdefault((source, address), {"source": source, "target": address,
                     "system": db_system, "observed_spans": 0, "evidence": "database span server.address"})
                 dep["observed_spans"] += 1
+            # Cache endpoints and broker addresses require an exact discovered name match.
+            broker = address or attrs.get("messaging.kafka.bootstrap.servers")
+            if attrs.get("messaging.system") and broker:
+                for entry in str(broker).split(","):
+                    host = entry.strip().split(":")[0]
+                    if host in services and host != source:
+                        dep = dependencies.setdefault((source, host), {"source": source, "target": host,
+                            "system": attrs["messaging.system"], "observed_spans": 0,
+                            "evidence": "messaging span broker address"})
+                        dep["observed_spans"] += 1
         parent = spans.get((key[0], span.get("parent_span_id")))
         if parent:
             caller = telemetry_to_service.get(parent.get("service"), parent.get("service"))
@@ -189,6 +204,10 @@ def summarize(snapshot, start, end):
         op["p50_ms"] = values[math.ceil(len(values) * .5) - 1] if values else None
         op["p95_ms"] = values[math.ceil(len(values) * .95) - 1] if values else None
     findings = []
+    caps = resources.get("capabilities", {}).get("value", {}).get("telemetry", {})
+    for signal, capability in caps.items():
+        findings.extend({"severity": "unknown", "service": None, "text": f"{signal}: {warning}"}
+                        for warning in capability.get("warnings", []))
     for name, service in services.items():
         queries = service["queries"]
         failed = [q for q in queries if q["status"] != "ok"]
@@ -216,7 +235,7 @@ def summarize(snapshot, start, end):
                 if metric["age_seconds"] > 120:
                     findings.append({"severity": "unknown", "service": name,
                                      "text": f"{name}: {metric['name']} latest point is {metric['age_seconds']:.0f}s old"})
-            if metric["latest"] and metric["name"] in {"rpc.errors.rate", "error.rate"} and metric["latest"]["value"] > 0:
+            if metric["latest"] and metric["name"] in {"rpc.errors.rate", "error.rate", "server.span.errors.rate"} and metric["latest"]["value"] > 0:
                 findings.append({"severity": "error", "service": name,
                                  "text": f"{name}: {metric['name']} is {metric['latest']['value']} {metric['unit']}"})
         for pod in service["pods"]:
@@ -224,7 +243,7 @@ def summarize(snapshot, start, end):
                 findings.append({"severity": "error", "service": name, "text": f"{name}: Pod {pod['name']} is not Ready"})
         rate = next((m for m in service["metrics"] if m["name"] == "rpc.rate" and m["latest"]), None)
         if rate and rate["latest"]["value"] == 0:
-            findings.append({"severity": "info", "service": name, "text": f"{name}: 最新 RPC 速率为零；catalog 没有内置负载发生器"})
+            findings.append({"severity": "info", "service": name, "text": f"{name}: 最新 RPC 速率为零；请检查近期业务流量"})
         if any(q["truncated"] for q in queries):
             findings.append({"severity": "info", "service": name,
                              "text": f"{name}: 查询达到上限；trace/日志统计仅代表返回样本，可增大 --limit 或缩短窗口"})
@@ -261,31 +280,40 @@ def topology_svg(summary):
     names = sorted(set(services) | {e[k] for e in edges for k in ("source", "target")})
     if not names:
         return "<p>未发现服务；请检查实体发现请求结果。</p>"
-    width, height = 1000, max(200, len(names) * 110 + 60)
-    positions = {name: (210, 65 + i * 110) for i, name in enumerate(names)}
-    out = [f'<svg viewBox="0 0 {width} {height}" role="img" aria-label="服务调用与实例成员关系">',
-           '<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="#1971c2"/></marker></defs>',
-           '<text x="15" y="20" font-size="13">箭头：trace 调用/明确数据库访问；灰色虚线：部署成员关系</text>']
+    # A compact grid with focusable edges scales to dozens of services. Full evidence
+    # remains in the edge table; it is never hidden by a graph layout heuristic.
+    columns = min(4, len(names))
+    width, height = 1200, max(200, math.ceil(len(names) / columns) * 130 + 60)
+    positions = {name: (150 + (i % columns) * 300, 95 + (i // columns) * 130)
+                 for i, name in enumerate(names)}
+    out = [f'<div class="topology"><p>点击服务仅突出其相邻依赖；点击空白恢复全部。蓝色：父子 span；绿色：地址匹配依赖。</p>'
+           f'<svg class="topology-svg" viewBox="0 0 {width} {height}" role="img" aria-label="服务调用与实例成员关系">',
+           '<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="#1971c2"/></marker></defs>']
     for e in edges:
         x1, y1 = positions[e["source"]]
         x2, y2 = positions[e["target"]]
+        y1 -= 27
+        y2 -= 27
         color = "#087f5b" if "system" in e else "#1971c2"
-        out.append(f'<path d="M{x1-140} {y1} C 5 {y1},5 {y2},{x2-140} {y2}" stroke="{color}" fill="none" marker-end="url(#arrow)"><title>{escape(e.get("evidence", "parent-child span"))}</title></path>'
-                   f'<text x="8" y="{(y1+y2)/2}" font-size="11">{e["observed_spans"]}</text>')
+        midpoint = min(y1, y2) - 48
+        out.append(f'<path class="dependency" data-source="{escape(e["source"], quote=True)}" data-target="{escape(e["target"], quote=True)}" '
+                   f'd="M{x1} {y1} C {x1} {midpoint},{x2} {midpoint},{x2} {y2}" stroke="{color}" stroke-opacity="0.45" fill="none" marker-end="url(#arrow)">'
+                   f'<title>{escape(e["source"])} → {escape(e["target"])}: {e["observed_spans"]} spans; {escape(e.get("evidence", "parent-child span"))}</title></path>')
     for name in names:
         x, y = positions[name]
         service = services.get(name)
-        out.append(f'<rect x="{x-140}" y="{y-22}" width="280" height="44" rx="7" fill="#e7f5ff" stroke="#1971c2"/>'
-                   f'<text x="{x}" y="{y+5}" text-anchor="middle" font-size="14">{escape(name)}</text>')
         pods = service["pods"] if service else []
-        text = "; ".join(p["name"] + " [" + str(p.get("attributes", {}).get("phase", "unknown")) + "]" for p in pods)
-        if not service:
-            text = "仅在 trace 中出现；实体目录未发现"
-        elif not pods:
-            text = "未发现实例"
-        out.append(f'<path d="M350 {y}H390" stroke="#868e96" stroke-dasharray="5 4"/>'
-                   f'<foreignObject x="400" y="{y-35}" width="585" height="90"><div xmlns="http://www.w3.org/1999/xhtml" style="font:12px sans-serif;overflow-wrap:anywhere">{escape(text)}</div></foreignObject>')
-    out.append('</svg>')
+        ready = sum(p.get("attributes", {}).get("ready") is True for p in pods)
+        subtitle = f"Ready {ready}/{len(pods)}" if service else "仅在 trace 中出现"
+        tooltip = "; ".join(p["name"] for p in pods) or subtitle
+        out.append(f'<g class="service-node" data-node="{escape(name, quote=True)}" tabindex="0" role="button" aria-label="{escape(name, quote=True)}">'
+                   f'<title>{escape(tooltip)}</title><rect x="{x-125}" y="{y-27}" width="250" height="64" rx="7" fill="#e7f5ff" stroke="#1971c2"/>'
+                   f'<text x="{x}" y="{y}" text-anchor="middle" font-size="15">{escape(name)}</text>'
+                   f'<text x="{x}" y="{y+22}" text-anchor="middle" font-size="12">{escape(subtitle)}</text></g>')
+    out.append('</svg><details><summary>展开全部依赖及来源</summary><table><tr><th>源</th><th>目标</th><th>样本</th><th>证据</th></tr>')
+    for edge in edges:
+        out.append(f'<tr><td>{escape(edge["source"])}</td><td>{escape(edge["target"])}</td><td>{edge["observed_spans"]}</td><td>{escape(edge.get("evidence", "parent-child span"))}</td></tr>')
+    out.append('</table></details></div>')
     return "".join(out)
 
 
@@ -357,11 +385,21 @@ def render_html(report, text):
              '<p>按 API 能力发现采集；没有数据与查询失败分别记录。图中的连线仅表示已观察到的关系。</p>']
     for target in report["targets"]:
         findings = target["summary"]["findings"]
-        finding_html = ''.join(f'<li class="{escape(f["severity"])}">{escape(f["text"])}</li>' for f in findings)
+        findings = sorted(findings, key=lambda f: {"error": 0, "unknown": 1, "info": 2}.get(f["severity"], 3))
+        finding_html = ''.join(f'<li class="{escape(f["severity"])}">{escape(f["text"])}</li>' for f in findings[:8])
+        if len(findings) > 8:
+            finding_html += '</ul><details><summary>展开其余发现</summary><ul>' + ''.join(
+                f'<li class="{escape(f["severity"])}">{escape(f["text"])}</li>' for f in findings[8:]) + '</ul></details><ul>'
         if not finding_html:
             finding_html = '<li>当前窗口未发现已证实的错误证据；这不是健康保证。</li>'
         summary = target["summary"]
-        parts.append(f'<section><h2>{escape(target["target"]["id"])}</h2><h3>重点发现</h3><ul>{finding_html}</ul><div class="grid">')
+        parts.append(f'<section><h2>{escape(target["target"]["id"])}</h2><p>{escape(target["target"].get("description", ""))}</p>'
+                     f'<p>服务 {len(summary["services"])} · 去重 span {summary["unique_spans_returned"]} · 调用关系 {len(summary["call_edges"])} · 地址依赖 {len(summary["dependencies"])}</p>'
+                     f'<h3>重点发现</h3><ul>{finding_html}</ul>')
+        many_services = len(summary["services"]) > 8
+        if many_services:
+            parts.append('<details><summary>展开所有服务的实例状态与关键指标</summary>')
+        parts.append('<div class="grid">')
         for name, service in summary["services"].items():
             ready = sum(p.get("attributes", {}).get("ready") is True for p in service["pods"])
             restarts = sum(p.get("attributes", {}).get("restarts", 0) for p in service["pods"])
@@ -374,18 +412,26 @@ def render_html(report, text):
             successful = [q for q in service["queries"] if q["status"] == "ok"]
             parts.append(f'<p>数据查询 {len(successful)}/{len(service["queries"])} 成功 · 非空 {sum(q["records"] > 0 for q in successful)}</p>'
                          f'<p>观测 span {service["span_count"]} · 错误 span {service["error_spans"]} · 日志 {service["log_count"]}</p></div>')
-        parts.append('</div><h3>系统结构与观测依赖</h3>' + topology_svg(summary))
+        parts.append('</div>')
+        if many_services:
+            parts.append('</details>')
+        parts.append('<h3>应用结构与本窗口观测依赖</h3>' + topology_svg(summary))
         if not target["summary"]["call_edges"]:
             parts.append('<p>未观察到跨服务父子 span。绿色依赖仅在数据库 span 的 server.address 精确匹配已发现服务时展示。</p>')
-        parts.append('<h3>操作级追踪样本</h3><p>不同操作分别统计，避免把长连接或 reflection 混入业务请求延迟；这些是样本分位数。</p><div class="scroll"><table><tr><th>服务 / 操作</th><th>类型</th><th>样本</th><th>错误</th><th>P50 ms</th><th>P95 ms</th></tr>')
+        parts.append('<details><summary>操作级追踪样本</summary><p>不同操作分别统计，避免把长连接或 reflection 混入业务请求延迟；这些是样本分位数。</p><div class="scroll"><table><tr><th>服务 / 操作</th><th>类型</th><th>样本</th><th>错误</th><th>P50 ms</th><th>P95 ms</th></tr>')
         for op in sorted(summary["operations"], key=lambda o: (-o["samples"], o["name"])):
             parts.append(f'<tr><td>{escape(op["service"])} / {escape(op["name"])}</td><td>{escape(op["kind"])}</td><td>{op["samples"]}</td><td>{op["errors"]}</td><td>{op["p50_ms"]}</td><td>{op["p95_ms"]}</td></tr>')
-        parts.append('</table></div><h3>指标趋势</h3><div class="grid">')
+        parts.append('</table></div></details><h3>指标趋势（按服务展开）</h3><div class="grid">')
         for name, service in target["summary"]["services"].items():
+            if not service["metrics"]:
+                continue
+            parts.append("<details><summary>" + escape(name) + " 指标曲线</summary>")
             for metric in service["metrics"]:
                 label = f'{name} / {metric["name"]} [{metric["unit"]}] {metric["labels"]}'
                 parts.append('<div class="metric"><h3>' + escape(label) + '</h3>' + metric_svg(metric["points"], label) + '</div>')
+            parts.append('</details>')
         parts.append('</div></section>')
+    parts.append("<script>\n document.querySelectorAll('.topology-svg').forEach(svg => {\n  function focus(node) {\n   svg.querySelectorAll('.dependency').forEach(edge => {\n    edge.style.opacity = !node || edge.dataset.source === node || edge.dataset.target === node ? '1' : '0.06';\n    edge.style.strokeWidth = node && (edge.dataset.source === node || edge.dataset.target === node) ? '3' : '1';\n   });\n  }\n  svg.addEventListener('click', event => { const node = event.target.closest('[data-node]'); focus(node ? node.dataset.node : null); });\n  svg.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { const node = event.target.closest('[data-node]'); if (node) { event.preventDefault(); focus(node.dataset.node); } } });\n });\n</script>")
     parts += ['<details><summary>展开完整文本、数据覆盖及限制</summary><pre>', escape(text), '</pre></details></html>']
     return "".join(parts)
 

@@ -3,6 +3,7 @@
 新增的统一 API 已实现实体发现、可观测性查询和 ChaosBlade 故障操作，并支持独立 provider 插件与多 target 配置。
 
 - [API 架构、运行与使用](docs/API.md)
+- [接入旧部署并同时查询两套环境](docs/EXISTING-FULL.md)
 - [ChaosBlade 安装、API 接入和实际故障验收](docs/CHAOS.md)
 - [系统近期图景样例：文本、拓扑与指标图](examples/README.md)
 - [供其他 agent 实现后端的接入规范](docs/SPEC.md)
@@ -11,7 +12,7 @@
 
 ```bash
 uv sync --extra test
-uv run demo-api --config configs/otel-catalog-metrics.yaml
+uv run demo-api --config configs/otel-multi.yaml
 # http://127.0.0.1:8000/docs
 ```
 

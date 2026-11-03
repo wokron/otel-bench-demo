@@ -88,3 +88,17 @@ PASS action preview: network.delay
 使用真实 API 生成最近 10 分钟报告（limit=500），得到 624 个去重 span，其中 208 个数据库 span 的 server.address 精确匹配 astronomy-db。示例快照：5 分钟业务速率约 0.3583 calls/s，错误比率 0%，Prometheus 直方图 P95 4.75 ms，Go runtime 内存 17578248 bytes，SQL 池 idle=1/inuse=0。这是有限流量后的窗口数据，不是持续负载基准；直方图 P95 和 trace 样本分位数算法不同。
 
 HTML 新增就绪/重启/指标卡片、重点发现、明确数据库依赖、操作级追踪表与有数值刻度的趋势图；当前图形报告含 9 个有效 SVG。28 项测试通过。未增加基础设施 CPU/RSS、数据库 exporter、持久化日志或源采集时间检测；未观测到的能力仍按缺口呈现。
+
+## 2026-11-03 旧 default/my-otel-demo 查询接入
+
+新增 `configs/otel-multi.yaml`，旧部署以 `otel-full-existing` 接入，原 catalog 保留 `otel-demo` 身份；使用原 state 数据库，不改变已有实验的目标。API 已用此配置在 127.0.0.1:8000 启动。旧 release、Collector 配置、官方负载发生器均未修改，也没有对此 target 注入故障。
+
+实际调查确认旧部署存在 20 个 Jaeger 服务名，以及 Collector span metrics、新旧 HTTP/gRPC 指标、Go/JVM 和 Valkey 内存等。统一 server span 指标使用实际 `service_name` 标签和独立 Prometheus；部分语言缺少 namespace 标签，额外以原 Collector host_name 范围约束，capabilities 说明限制。不使用 catalog 的 job 模板匹配旧部署。
+
+十分钟窗口、每次 limit=50：旧 target 发现 25 个应用组件，114 次遥测查询均成功、96 次非空，返回 7787 个去重 span、24 条直接跨服务调用边和 3 条地址依赖（accounting/product-catalog → astronomy-db，cart → valkey-cart）。数量随实时流量和查询窗口变化。frontend-web 只在 trace 中出现，没有虚构 Kubernetes 实例。
+
+本次快照示例：frontend server span rate 7.29 spans/s、直方图 P95 42.68 ms；cart P95 155.43 ms；checkout P95 15000 ms。报告将它们标明为采集服务端 span 指标，不能直接等同独立用户请求吞吐或端到端时延。frontend-proxy 在返回样本中存在 4 个错误 span。发现日志导出仍因缺失 OpenSearch 失败，API 用 Pod stdout/stderr 并明确提示缺口；没有隐式安装日志存储。
+
+旧商城首页 HTTP 200 且返回 HTML。生成双 target 的 `.reports/overview.{html,txt,json}` 及旧环境单独的 `.reports/full.{html,txt,json}`。双环境报告包含 73 个结构合法的 SVG；使用本机 Chrome headless 渲染查看布局，并验证点击 checkout 可突出相关边、点击空白可恢复全部关系。指标曲线与操作明细按需展开，避免多服务页面过长。
+
+测试总数 **37 passed**，增加多 target 配置/故障作用域隔离、新旧 HTTP/gRPC/OTel 错误状态转换和多服务图形证据保留测试。当前未按 span links/消息 ID 构建异步生产者与消费者关联，未把无服务归属标签的 cAdvisor 指标强行归属到应用。

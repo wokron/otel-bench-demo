@@ -23,7 +23,7 @@ flowchart TD
 
 一个 target 组合一个 discovery、每种 signal 一个 telemetry provider，以及可选 actuator。第三方 provider 通过 Python entry points 注册，API 路由与实验状态机不需要知道具体 demo 名称。既可以配置多个独立 target，也可以分别为新环境替换日志或故障后端。
 
-当前内置 provider：Kubernetes discovery、Jaeger、Prometheus、Kubernetes stdout/stderr、OpenSearch、ChaosBlade。已经验证的目标是 otel-demo catalog；尚未验证第二个 demo 或非 Kubernetes discovery。
+当前内置 provider：Kubernetes discovery、Jaeger、Prometheus、Kubernetes stdout/stderr、OpenSearch、ChaosBlade。已经验证 catalog 和旧 default/my-otel-demo 的查询接入；二者属于同一种 demo 的不同部署，尚未验证另一种 demo 或非 Kubernetes discovery。
 
 ## 启动
 
@@ -39,7 +39,7 @@ uv run demo-api --config configs/otel-catalog-metrics.yaml
 
 两条启动命令择一运行。默认地址 `http://127.0.0.1:8000`，交互文档 `http://127.0.0.1:8000/docs`。同一 state 数据库只能由一个 API worker 使用，启动时以文件锁检查；不使用多 worker 或多副本共享本地 SQLite。
 
-所有 `configs/otel-*.yaml` 默认指向 context `minikube`、namespace `otel-demo`。如果接入旧的 `default/my-otel-demo` 或新 profile，需要复制配置并修改 context/namespace，不能仅修改部署脚本环境变量。默认 `service_label: opentelemetry.io/name`，selector 是该标签存在；避免把 Collector 和存储组件当作应用故障目标。
+`configs/otel-multi.yaml` 同时接入 default 中的旧部署和 otel-demo 中的 catalog，参见 [已有部署接入](EXISTING-FULL.md)。其余 `configs/otel-*.yaml` 默认指向 context `minikube`、namespace `otel-demo`。如果接入旧的 `default/my-otel-demo` 或新 profile，需要复制配置并修改 context/namespace，不能仅修改部署脚本环境变量。默认 `service_label: opentelemetry.io/name`，selector 是该标签存在；避免把 Collector 和存储组件当作应用故障目标。
 
 如需远程使用，先设置 `DEMO_API_TOKEN`，再指定 `--host`。客户端请求带 `Authorization: Bearer $DEMO_API_TOKEN`。连接后端时默认按请求建立 localhost port-forward，结束即清理；进程内运行 API 时也不改变当前 kubectl context。已有网络可达 endpoint 时，provider 配置使用 `url` 可跳过转发。
 
