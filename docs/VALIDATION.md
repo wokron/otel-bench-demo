@@ -70,3 +70,11 @@ PASS action preview: network.delay
 新增 `examples/system_overview.py` 后测试总数为 **24 passed**。新增测试验证全服务自动查询、缺失能力跳过、部分后端失败保留、重复 trace 去重、时间窗过滤、服务名映射、直接父子调用边、成员关系、HTML 内容转义及缺失数值处理。
 
 真实 HTTP 样例以 60 分钟窗口查询当前 API：发现 3 个服务，执行 9 次遥测查询（5 次非空、4 次空结果），得到 14 个去重 span、75 条数据库日志、21 条 flagd 日志及 product-catalog RPC 指标序列。生成 `.reports/overview.txt`、`.reports/overview.html`、`.reports/overview.json`，实验只读取列表，未执行或刷新实验。
+
+## 2026-11-03 ChaosBlade 安装与 HTTP 故障复验
+
+启动原有 minikube 后，通过 `HELM="$PWD/.cache/tools/linux-amd64/helm" bash otel-demo/demo.sh chaos-install catalog` 成功升级 ChaosBlade release 至 revision 2。新增 `chaos-install/chaos-check` 入口；检查 CRD、operator Deployment 和 tool DaemonSet 均通过，节点仍为 Docker 29.2.1，CPU/网络运行时限制不变。
+
+通过真实 HTTP API 运行 `scripts/chaos_smoke.py --execute --action pod.kill`，实验 `da-1e198a5295e94ce499b7aace9ce08d62` 从 pending 进入 running，backend resStatuses.success=true；目标为 `otel-demo/minikube/product-catalog-6d6b5cbfbd-ch4f2`。脚本通过 DELETE 请求清理并确认 cancelled，最终无 ChaosBlade CR。新 Pod `product-catalog-6d6b5cbfbd-nqhrv` Ready；原业务检查返回 10 件商品，并确认 fresh traces 和 PostgreSQL spans。
+
+测试总数 **26 passed**；新增用例验证 smoke 脚本成功和后端失败时均请求清理。Shell 语法检查通过。此次未重新执行 CPU/网络注入，也没有调整 Docker daemon。
