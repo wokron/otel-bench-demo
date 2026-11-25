@@ -7,8 +7,8 @@
 | action | service | parameters | 效果 |
 | --- | --- | --- | --- |
 | business.payment.failure | payment | percent: 10/25/50/75/100，默认 25 | 应用按比例模拟支付失败 |
-| business.cart.failure | cart | 同上 | 应用按比例模拟购物车操作失败 |
-| business.payment.unavailable | payment | {} | 应用模拟支付不可达，区别于真实网络隔离 |
+| business.cart.failure | cart | 同上 | EmptyCart 按比例使用故障存储；GetCart/AddItem 不触发此故障 |
+| business.payment.unavailable | payment | {} | checkout 的 PlaceOrder 调用支付时使用错误地址；直接 Charge 仍可成功 |
 
 比例按目标配置中的实际 variant 数值匹配，未定义的比例返回 422；不根据 variant 名字猜测数值。暂不支持带 targeting 的 flag、商品定向失败、内存泄漏或任意开关修改。请求只能选择上述动作及对应 service，不能覆盖 namespace、ConfigMap、flag 名称或执行命令。
 
@@ -83,6 +83,16 @@ uv run python scripts/business_smoke.py --execute \
 
 脚本通过 DEMO_API_TOKEN 读取认证令牌，默认 localhost:8000。若创建请求在返回 ID 前失败，需通过实验列表找回记录并清理，不能盲目换新键重试。后端不可达时清理可能尚未完成，应保留状态库并检查实验错误。
 
+需要验证真实业务效果时，使用下面的完整验收程序。它在三个动作上分别执行 baseline → 100% 故障/不可达 → 对照请求 → 恢复 → 业务复验，并保存 JSON 证据。调用通过独立的 gRPC 请求发出，使用固定版本 proto，无需服务启用 reflection；需要 grpcurl（自动查找 PATH 或 `.cache/tools/grpcurl`，也可传 `--grpcurl`）。
+
+```bash
+uv run python scripts/business_validate.py --execute \
+  --target otel-full-existing --context minikube --namespace default \
+  --output .reports/business-validation.json
+```
+
+默认每阶段三个请求，支持 `--samples 1..10` 和重复的 `--action` 选择子集。支付失败用直接 Charge 验证；购物车失败用 EmptyCart 验证、GetCart 对照；支付不可达用完整 PlaceOrder 验证、直接 Charge 对照。程序使用独立测试用户、虚拟卡号、synthetic_request baggage，结束后清理该测试用户购物车。报告包含各请求响应/错误和实验状态；不是失败率的统计基准。
+
 ## 并发与恢复边界
 
 - 计划和恢复快照在后端写入前存入 SQLite。即使后端写成功但响应丢失，仍能通过持久化的 plan 恢复。
@@ -118,4 +128,4 @@ actions:
 
 组合层根据子 provider describe 的动作名称自动路由，拒绝重名与嵌套 composite。其他 demo 可以实现自己的业务 actuator，通过 entry point 注册；不需要改 HTTP 路由。单 target 一个未恢复实验的限制保持不变。
 
-本次验证包括自动测试、HTTP TestClient 生命周期、响应丢失后重启恢复，以及实际 chart 0.41.0 的离线渲染/部署转换/三种动作计划。核对了 flagd v0.11.1/v0.16.0 的 OFREP 路径及文件监听源码。本次没有启动停止中的 minikube，没有对真实 deployment 执行准备脚本，也没有对真实业务注入；实际投影延迟、求值及业务效果仍需运行上述验收命令确认。
+初次实现验证包括自动测试、HTTP TestClient 生命周期、响应丢失后重启恢复，以及实际 chart 0.41.0 的离线渲染/部署转换/三种动作计划；随后已在 2026-11-25 启动 minikube 并完成三个动作的真实验收，见 [VALIDATION.md](VALIDATION.md)。每个动作均为基线 3 次成功、故障期 3 次失败、对照成功、恢复后 3 次成功。购物车故障表现为 EmptyCart 达到 20 秒客户端期限；支付不可达表现为 checkout 调用 badAddress 失败，而直接 Charge 仍成功。测试通过不代表对失败比例进行了统计校准，也不代表其他 demo 已验证。

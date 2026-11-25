@@ -112,3 +112,21 @@ HTML 新增就绪/重启/指标卡片、重点发现、明确数据库依赖、�
 使用实际缓存的 Helm chart 0.41.0 渲染 full 资源，经过 business_flags_setup.prepare 转换后，三种业务动作均成功生成计划；确认转换不重复 Service 已存在的命名 targetPort。准备脚本默认预览、--apply 才修改资源，先独占保存备份，保留 Kubernetes resourceVersion 并发检查。脚本入口帮助、文档链接与 git diff --check 通过；重新导出 OpenAPI/配置契约后无结构变化。
 
 核对 flagd v0.11.1 与 v0.16.0 源码的 OFREP v1 路径，v0.11.1 文件监听器包含 Kubernetes ConfigMap symlink 更新后的重新监听逻辑。本次 minikube 处于 Stopped，未启动、未对真实 flagd 执行准备脚本、未真实注入业务故障。测试中的求值及 Kubernetes 边界使用受控替身；离线渲染不能代替实际投影/求值/业务失败与恢复验收。部署与验收命令见 BUSINESS-FAULTS.md。
+
+## 2026-11-25 minikube 业务故障真实验收
+
+启动已有 minikube（根分区约 98%，使用 --force，未清理镜像或部署），将本次启动环境的 fs.inotify.max_user_instances 临时设为 1024。通过 business_flags_setup.py --namespace default --apply 准备真实 flagd：ConfigMap 直接投影、UI 只读共享挂载、保留原 Service 8016，Deployment rollout 成功。实际 flagd 镜像为 ghcr.io/open-feature/flagd:v0.16.0；备份位于 .state/flagd-default-before-business-20261125.json。
+
+通过真实 HTTP API 配置 configs/otel-multi.yaml，对 otel-full-existing/default 依次执行三种业务故障。新建 scripts/business_validate.py，以 pinned demo 3.0.0 proto 和独立 grpcurl 请求验证基线、注入、对照和恢复，虚拟卡号通过 synthetic_request=true baggage 标记；使用独立测试用户并在结束后清空其购物车。
+
+| 动作 / 实验 | 注入前 | 注入期间 | 不受影响的对照 | 恢复后 |
+| --- | --- | --- | --- | --- |
+| payment.failure / da-a370338921c140619c80347f6c2d83cb | Charge 3/3 成功 | 100%：3/3 返回 Unknown / Invalid token | GetCart 成功 | Charge 3/3 成功 |
+| cart.failure / da-5f8a1c58858042bdb43ea6b2d3d305bf | EmptyCart 3/3 成功 | 100%：3/3 在客户端 20 秒期限返回 DeadlineExceeded | GetCart 成功 | EmptyCart 3/3 成功 |
+| payment.unavailable / da-d90cd3dab6934d85961ee8b2ecf7e3c5 | PlaceOrder 3/3 成功 | 3/3 返回 Internal，详情指向支付调用 badAddress 的 DNS 解析错误 | 直接 Charge 成功 | PlaceOrder 3/3 成功 |
+
+全部实验先确认 OFREP 期望 variant/value 再发故障期业务请求；撤销后先确认原求值再复验业务。三个实验最终均 cancelled；整个 ConfigMap flag 文档与准备前备份相等，三项求值均 off，ConfigMap 无业务实验所有权 annotation；无未完成 API 实验、无 ChaosBlade CR。最后检查所有 namespace 均无非 Running Pod。保留已准备的 flagd 后端和多目标 API，以便继续使用；API 在 localhost:8000。
+
+完整 RPC 响应、错误、实验计划/状态及最终校验保存在被 Git 忽略的 .reports/business-validation-20261125.json，文本摘要为同名 .txt。通过公共 query 接口查询 payment/cart/checkout 的近期 traces，保存 .reports/business-traces-20261125.json；样本包含支付和 checkout 错误 Span，但所取 cart 样本没有错误状态。Span 数据受采样、窗口和 limit 影响，不能把样本错误数等同三个独立探测请求的结果，RPC 前后对照是本次业务验收的直接证据。
+
+实际验收明确了触发语义：cartFailure 只影响 EmptyCart，paymentUnreachable 由 checkout 消费。capabilities 和 plan 新增 trigger，文档同步说明；payment.unavailable 计划额外校验 checkout 实体存在。自动测试现为 **55 passed**；新增验收程序在业务效果断言失败时仍撤销故障，以及探测与 API 命名空间不一致时拒绝注入的测试。代码编译、CLI 帮助和 diff 格式检查通过。
