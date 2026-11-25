@@ -33,7 +33,7 @@ class ChaosBlade:
             raise ValueError("Unknown ChaosBlade allowed_actions")
 
     def describe(self):
-        return [{"name": name, "description": ACTIONS[name][3], "parameters_schema": ACTIONS[name][0].model_json_schema(),
+        return [{"name": name, "category": "infrastructure", "description": ACTIONS[name][3], "parameters_schema": ACTIONS[name][0].model_json_schema(),
                  "max_duration_seconds": 300, "max_pods": 1, "reversible": name != "pod.kill",
                  "requires": "ChaosBlade operator" if name == "pod.kill" else "ChaosBlade operator and compatible per-node tool runtime"}
                 for name in self.allowed]

@@ -17,6 +17,10 @@ def test_existing_full_and_catalog_have_separate_scopes_and_identity():
     assert full.discovery.service_id('checkout') != catalog.discovery.service_id('checkout')
     assert full.actuator.target == 'otel-full-existing'
     assert full.actuator.kube.namespace == 'default'
+    full_actions = full.actuator.describe()
+    assert {a['category'] for a in full_actions} == {'business', 'infrastructure'}
+    assert len([a for a in full_actions if a['category'] == 'business']) == 3
+    assert all(a['category'] == 'infrastructure' for a in catalog.actuator.describe())
     assert full.telemetry['logs'].describe()['warnings']
     metrics = full.telemetry['metrics'].describe()['metrics']
     assert {m['unit'] for m in metrics} >= {'spans/s', 'ms', 'ratio', 'bytes'}

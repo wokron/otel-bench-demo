@@ -29,11 +29,14 @@ def load_provider(name: str, config: dict, context: dict):
     from demo_api.providers.kubernetes import KubernetesDiscovery
     from demo_api.providers.telemetry import Jaeger, KubernetesLogs, Prometheus, OpenSearch
     from demo_api.providers.chaosblade import ChaosBlade
+    from demo_api.providers.business import BusinessFlags
+    from demo_api.providers.composite import Composite
 
     builtins = {
         "kubernetes": KubernetesDiscovery, "jaeger": Jaeger,
         "kubernetes-logs": KubernetesLogs, "prometheus": Prometheus,
         "opensearch": OpenSearch, "chaosblade": ChaosBlade,
+        "otel-demo-flags": BusinessFlags, "composite": Composite,
     }
     if name in builtins:
         return builtins[name](config, context)

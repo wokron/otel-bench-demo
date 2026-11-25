@@ -47,6 +47,9 @@ def main():
                 assert result["records"], f"No {signal} records; generate traffic and wait for export"
             print(f'PASS {signal}: {len(result["records"])} records, source={result["source"]}')
         for action in caps["actions"]:
+            if action.get("services") and args.service not in action["services"]:
+                print(f'SKIP action preview: {action["name"]} does not apply to {args.service}')
+                continue
             result = call("POST", prefix + "/experiments", json={"action": action["name"], "service": args.service})
             assert result["dry_run"] and result["plan"]
             print(f'PASS action preview: {action["name"]}')

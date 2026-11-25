@@ -64,7 +64,7 @@ class Experiments:
             now = time.time()
             doc = {"id": experiment_id, "target_id": target, "action": request.action,
                    "state": "creating", "created_at": now, "expires_at": now + request.duration_seconds,
-                   "plan": plan, "handle": {"name": experiment_id}}
+                   "plan": plan, "handle": {"name": experiment_id, "plan": plan}}
             self.db.execute("INSERT INTO experiments VALUES (?,?,?,?,?)",
                             (experiment_id, target, key, fingerprint, json.dumps(doc)))
             self.db.commit()  # Intent exists even if process dies during the backend write.

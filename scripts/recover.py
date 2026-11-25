@@ -26,7 +26,7 @@ def main():
                         result = store.refresh(target.id, row[0])
                     print(row[0], result["state"])
                     if result["state"] not in {"cancelled", "completed"}:
-                        raise RuntimeError("Recovery not confirmed; inspect ChaosBlade status/finalizers")
+                        raise RuntimeError("Recovery not confirmed; inspect experiment backend_status/last_error and its provider")
         finally:
             store.db.close()
 

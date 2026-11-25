@@ -104,12 +104,26 @@ targets:
         - Some services lack Kubernetes namespace attributes; templates also match
           the existing otel-collector-agent host name.
   actions:
-    plugin: chaosblade
+    plugin: composite
     config:
-      allowed_actions:
-      - pod.kill
-      - cpu.load
-      - network.delay
+      legacy_provider: infrastructure
+      providers:
+        infrastructure:
+          plugin: chaosblade
+          config:
+            allowed_actions: [pod.kill, cpu.load, network.delay]
+        business:
+          plugin: otel-demo-flags
+          config:
+            configmap: flagd-config
+            deployment: flagd
+            allowed_actions:
+            - business.payment.failure
+            - business.cart.failure
+            - business.payment.unavailable
+            evaluation:
+              service: flagd
+              port: 8016
 - id: otel-demo
   description: OpenTelemetry Demo catalog with Prometheus overlay on minikube
   discovery:
