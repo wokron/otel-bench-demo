@@ -1,5 +1,7 @@
 # 在 otel-demo 中安装并通过 API 使用 ChaosBlade
 
+更多动作、Docker 兼容性修复、业务故障插件与 Chaos Mesh 备选方案见 [混沌能力扩展调查](CHAOS-EXTENSION.md)。该文档是设计建议，不表示候选动作已实现。
+
 ChaosBlade 是集群级故障执行框架，安装到独立的 `chaosblade` namespace；实验通过 `names` + `namespace` 精确指向 otel-demo 的单个 Pod。无需把二进制塞进各业务容器。当前 API 已配置 ChaosBlade provider，安装后即可使用统一 experiments 接口。
 
 ## 安装与检查
