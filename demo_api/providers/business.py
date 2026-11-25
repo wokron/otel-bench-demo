@@ -30,6 +30,12 @@ ACTIONS = {
     "business.payment.unavailable": ("payment", "paymentUnreachable", Unavailable),
 }
 
+TRIGGERS = {
+    "business.payment.failure": "payment: oteldemo.PaymentService/Charge",
+    "business.cart.failure": "cart: oteldemo.CartService/EmptyCart (not GetCart/AddItem)",
+    "business.payment.unavailable": "checkout: oteldemo.CheckoutService/PlaceOrder -> payment (direct Charge stays available)",
+}
+
 
 class BusinessFlags:
     def __init__(self, config, context):
@@ -48,6 +54,7 @@ class BusinessFlags:
     def describe(self):
         return [{"name": name, "category": "business", "services": [ACTIONS[name][0]],
                  "description": f"Application-level fault via {ACTIONS[name][1]}; requires business traffic",
+                 "trigger": TRIGGERS[name],
                  "parameters_schema": ACTIONS[name][2].model_json_schema(),
                  "max_duration_seconds": 300, "reversible": True,
                  "requires": "Direct ConfigMap volume in flagd and OFREP evaluation endpoint",
@@ -86,6 +93,8 @@ class BusinessFlags:
         if request.service != service:
             raise APIError("unsupported_action", f"This action only applies to {service}", 422)
         self.discovery.resolve(service)
+        if request.action == "business.payment.unavailable":
+            self.discovery.resolve("checkout")
         self._check_mount()
         cm, document = self._read()
         original = document["flags"].get(flag)
@@ -107,6 +116,7 @@ class BusinessFlags:
         return {"target_id": self.target, "namespace": self.kube.namespace, "service": service,
                 "configmap": self.cm, "configmap_uid": cm["metadata"]["uid"], "key": self.key,
                 "flag": flag, "original": original, "desired": desired,
+                "trigger": TRIGGERS[request.action],
                 "duration_seconds": request.duration_seconds,
                 "warnings": ["ConfigMap projection is asynchronous and may take over a minute; duration includes this delay.",
                              "Running confirms flag evaluation, not that a business request has failed."]}

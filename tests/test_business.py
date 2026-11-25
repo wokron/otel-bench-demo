@@ -168,6 +168,8 @@ def test_boolean_fault_and_category(backend):
     h = p.apply('da-1', p.plan(request('business.payment.unavailable')))
     assert kube.flags()['paymentUnreachable']['defaultVariant'] == 'on'
     assert p.describe()[0]['category'] == 'business'
+    assert 'EmptyCart' in next(a for a in p.describe() if a['name'] == 'business.cart.failure')['trigger']
+    assert 'checkout:' in h['plan']['trigger']
     p.cancel('da-1', h)
     assert kube.flags()['paymentUnreachable']['defaultVariant'] == 'off'
 
