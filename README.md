@@ -5,6 +5,7 @@
 - [API 架构、运行与使用](docs/API.md)
 - [接入旧部署并同时查询两套环境](docs/EXISTING-FULL.md)
 - [ChaosBlade 安装、API 接入和实际故障验收](docs/CHAOS.md)
+- [业务故障：支付/购物车失败、部署准备与恢复](docs/BUSINESS-FAULTS.md)
 - [更多故障注入能力：兼容性调查与插件扩展方案](docs/CHAOS-EXTENSION.md)
 - [系统近期图景样例：文本、拓扑与指标图](examples/README.md)
 - [供其他 agent 实现后端的接入规范](docs/SPEC.md)

@@ -65,6 +65,10 @@ metrics 的名称、description、unit MUST 在 capabilities 中自描述。调�
 
 ### 动作与实验
 
+动作描述 MAY 提供 category（如 infrastructure、business）及 services 适用服务列表。消费方 SHOULD 按 services 筛选，不能将业务故障请求发送到任意服务；category 不改变实验 HTTP 生命周期。内置业务 provider 仅接受白名单动作，不提供任意开关/命令透传。
+
+组合 actuator MUST 持久化创建时的子后端身份和恢复快照，并在配置变更后拒绝将旧实验交给不同后端。业务配置型故障 MUST 还原原值、检测并发修改，并区分配置写入成功、后端求值确认与实际业务效果验证。现有实现详见 [业务故障接口](BUSINESS-FAULTS.md)。
+
 ```json
 {
   "action": "cpu.load",

@@ -110,6 +110,8 @@ print(response.json())
 
 ## ChaosBlade 部署与动作
 
+除下面的基础设施故障外，统一 experiments 接口也支持 `category: business` 的业务故障：支付失败、购物车失败、支付不可达。`otel-multi.yaml` 的旧部署通过 composite 同时接入两类动作；业务后端需先准备 flagd 挂载，完整说明见 [BUSINESS-FAULTS.md](BUSINESS-FAULTS.md)。
+
 ```bash
 bash scripts/chaosblade.sh render > /tmp/chaosblade.yaml
 bash scripts/chaosblade.sh install

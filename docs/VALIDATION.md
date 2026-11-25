@@ -102,3 +102,13 @@ HTML 新增就绪/重启/指标卡片、重点发现、明确数据库依赖、�
 旧商城首页 HTTP 200 且返回 HTML。生成双 target 的 `.reports/overview.{html,txt,json}` 及旧环境单独的 `.reports/full.{html,txt,json}`。双环境报告包含 73 个结构合法的 SVG；使用本机 Chrome headless 渲染查看布局，并验证点击 checkout 可突出相关边、点击空白可恢复全部关系。指标曲线与操作明细按需展开，避免多服务页面过长。
 
 测试总数 **37 passed**，增加多 target 配置/故障作用域隔离、新旧 HTTP/gRPC/OTel 错误状态转换和多服务图形证据保留测试。当前未按 span links/消息 ID 构建异步生产者与消费者关联，未把无服务归属标签的 cAdvisor 指标强行归属到应用。
+
+## 2026-11-25 业务故障插件与组合后端
+
+新增 otel-demo-flags provider，支持 business.payment.failure、business.cart.failure、business.payment.unavailable；category 为 business。composite provider 自动按动作路由，持久化子后端配置/target/context/namespace 指纹，并通过 legacy_provider 保留旧 ChaosBlade 记录的恢复路径。实验写入前的默认 handle 现在也保存完整 plan，以恢复后端写成功但响应丢失的情况。
+
+自动测试总数 **52 passed**（原有一条 Starlette/httpx 弃用提示）。新增验证：HTTP 预览/执行/查询/撤销、参数约束、幂等、目标隔离、ConfigMap resourceVersion 冲突与 UID 变化、外部同 flag 编辑不覆盖、无关 flag 更新保留、恢复到原非 off 值、求值延迟与不可达时不误报恢复、截止时间恢复、写成功响应丢失后重启恢复、组合路由冲突、后端配置变更拒绝及旧记录兼容。
+
+使用实际缓存的 Helm chart 0.41.0 渲染 full 资源，经过 business_flags_setup.prepare 转换后，三种业务动作均成功生成计划；确认转换不重复 Service 已存在的命名 targetPort。准备脚本默认预览、--apply 才修改资源，先独占保存备份，保留 Kubernetes resourceVersion 并发检查。脚本入口帮助、文档链接与 git diff --check 通过；重新导出 OpenAPI/配置契约后无结构变化。
+
+核对 flagd v0.11.1 与 v0.16.0 源码的 OFREP v1 路径，v0.11.1 文件监听器包含 Kubernetes ConfigMap symlink 更新后的重新监听逻辑。本次 minikube 处于 Stopped，未启动、未对真实 flagd 执行准备脚本、未真实注入业务故障。测试中的求值及 Kubernetes 边界使用受控替身；离线渲染不能代替实际投影/求值/业务失败与恢复验收。部署与验收命令见 BUSINESS-FAULTS.md。
